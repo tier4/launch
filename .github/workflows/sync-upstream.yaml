@@ -7,77 +7,35 @@ on:
   
   # Manual trigger
   workflow_dispatch:
-    inputs:
-      sync_all_branches:
-        description: 'Sync all tracked branches (if false, only syncs specified branches)'
-        required: true
-        default: 'false'
-        type: boolean
 
 jobs:
   sync:
     name: Sync with upstream repository
     runs-on: ubuntu-latest
-    
+    strategy:
+      matrix: 
+        base_branch: 
+          - rolling
+          - iron
+          - humble
+          - foxy
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
       
-      - name: Add upstream remote
-        run: |
-          git remote add upstream https://github.com/ros2/launch.git
-          git remote -v
-      
-      - name: Fetch upstream changes
-        run: |
-          git fetch upstream
-          
-      - name: Sync specific branches
-        if: ${{ !inputs.sync_all_branches }}
-        run: |
-          # List of branches to sync (customize this list)
-          BRANCHES=("rolling" "jazzy" "iron" "humble" "foxy")
-          
-          for branch in "${BRANCHES[@]}"; do
-            echo "Syncing branch: $branch"
-            
-            # Check if branch exists locally
-            if git show-ref --verify --quiet refs/heads/$branch; then
-              git checkout $branch
-            else
-              git checkout -b $branch upstream/$branch
-            fi
-            
-            # Sync with upstream
-            git fetch upstream $branch
-            git reset --hard upstream/$branch
-            git push origin $branch --force
-          done
-          
-      - name: Sync all tracked branches
-        if: ${{ inputs.sync_all_branches }}
-        run: |
-          # Get all remote branches from upstream
-          BRANCHES=$(git branch -r | grep upstream | sed 's/upstream\///')
-          
-          for branch in $BRANCHES; do
-            echo "Syncing branch: $branch"
-            
-            # Check if branch exists locally
-            if git show-ref --verify --quiet refs/heads/$branch; then
-              git checkout $branch
-            else
-              git checkout -b $branch upstream/$branch
-            fi
-            
-            # Sync with upstream
-            git fetch upstream $branch
-            git reset --hard upstream/$branch
-            git push origin $branch --force
-          done
-      
-      - name: Cleanup
-        run: |
-          git remote remove upstream
+      - name: Run sync-branches
+        uses: autowarefoundation/autoware-github-actions/sync-branches@v1
+        with:
+          token: ${{ steps.generate-token.outputs.token }}
+          base-branch: ${{ matrix.base_branch }}
+          sync-pr-branch: sync-upstream-${{ matrix.base_branch }}
+          sync-target-repository: https://github.com/ros2/launch.git
+          sync-target-branch: ${{ matrix.base_branch }}
+          pr-title: "chore: sync upstream ${{ matrix.base_branch }}"
+          pr-labels: |
+            bot
+            sync-upstream
+          auto-merge-method: merge
