@@ -18,6 +18,7 @@ import os
 from typing import Iterable, Sequence
 from typing import List
 from typing import Optional
+from typing import Text
 from typing import Tuple
 from typing import Union
 
@@ -160,10 +161,15 @@ class IncludeLaunchDescription(Action):
             perform_substitutions(context, normalize_to_list_of_substitutions(arg_name))
             for arg_name, arg_value in self.launch_arguments
         ]
-        declared_launch_arguments = (
-            launch_description.get_launch_arguments_with_include_launch_description_actions(
-                only_search_local=True)
+        try:
+            declared_launch_arguments = (
+                launch_description.get_launch_arguments_with_include_launch_description_actions(
+                  only_search_local=True)
             )
+        except Exception as exc:
+            if hasattr(exc, 'add_note'):
+                exc.add_note(f'while executing {self.describe()}')  # type: ignore
+            raise
         for argument, ild_actions in declared_launch_arguments:
             if argument._conditionally_included or argument.default_value is not None:
                 continue
@@ -187,3 +193,7 @@ class IncludeLaunchDescription(Action):
 
         # Set launch arguments as launch configurations and then include the launch description.
         return [*set_launch_configuration_actions, launch_description]
+
+    def __repr__(self) -> Text:
+        """Return a description of this IncludeLaunchDescription as a string."""
+        return f'IncludeLaunchDescription({self.__launch_description_source.location})'

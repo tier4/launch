@@ -152,11 +152,17 @@ class LaunchDescription(LaunchDescriptionEntity):
                         if next_nested_ild_actions is None:
                             next_nested_ild_actions = []
                         next_nested_ild_actions.append(entity)
-                    process_entities(
-                        entity.describe_sub_entities(),
-                        _conditional_inclusion=False,
-                        nested_ild_actions=next_nested_ild_actions,
-                        only_search_local=only_search_local)
+                    try:
+                        process_entities(
+                            entity.describe_sub_entities(),
+                            _conditional_inclusion=False,
+                            nested_ild_actions=next_nested_ild_actions,
+                             only_search_local=only_search_local
+                        )
+                    except Exception as e:
+                        if hasattr(e, 'add_note'):
+                            e.add_note(f'processing sub-entities of entity: {entity}')
+                        raise
                     for conditional_sub_entity in entity.describe_conditional_sub_entities():
                         process_entities(
                             conditional_sub_entity[1],
