@@ -4,3 +4,6 @@ children:
   - branch: beta/project/v0.50
     product_name: my_project
     created_at: 2026-01-07T09:34:46Z
+  - branch: beta/project_2/v0.50
+    product_name: my_project_2
+    created_at: "2026-01-07T09:47:28Z"
