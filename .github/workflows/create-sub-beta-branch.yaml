@@ -46,31 +46,34 @@ jobs:
           app_id: ${{ secrets.APP_ID }}
           private_key: ${{ secrets.PRIVATE_KEY }}
 
-      # Checkout default branch first to get the workflow templates
-      - name: Checkout default branch for templates
+      # Checkout the branch where this workflow lives to get the templates
+      - name: Checkout workflow branch for templates
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ steps.generate-token.outputs.token }}
-          path: templates-repo
+
+      - name: Cache workflow templates
+        run: |
+          # Save templates to a temporary location before switching branches
+          mkdir -p /tmp/workflow-templates
+          cp .github/workflow-templates/*.template /tmp/workflow-templates/
+          echo "Cached workflow templates:"
+          ls -la /tmp/workflow-templates/
 
       - name: Checkout base branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.base_branch }}
-          fetch-depth: 0
-          token: ${{ steps.generate-token.outputs.token }}
-          path: work-repo
+        run: |
+          git fetch origin ${{ inputs.base_branch }}
+          git checkout ${{ inputs.base_branch }}
+          echo "Checked out base branch: ${{ inputs.base_branch }}"
 
       - name: Set git config
-        working-directory: work-repo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Get target commit
         id: get-commit
-        working-directory: work-repo
         run: |
           if [ -z "${{ inputs.commit }}" ]; then
             # Default to the latest commit of base_branch (current HEAD after checkout)
@@ -88,7 +91,6 @@ jobs:
           echo "commit=$COMMIT" >> $GITHUB_OUTPUT
 
       - name: Check if branch already exists
-        working-directory: work-repo
         run: |
           if git ls-remote --exit-code --heads origin "${{ inputs.branch_name }}" >/dev/null 2>&1; then
             echo "Error: Branch ${{ inputs.branch_name }} already exists"
@@ -97,13 +99,11 @@ jobs:
           echo "Branch ${{ inputs.branch_name }} does not exist, proceeding with creation"
 
       - name: Create child branch
-        working-directory: work-repo
         run: |
           git checkout -b "${{ inputs.branch_name }}" "${{ steps.get-commit.outputs.commit }}"
           echo "Created branch ${{ inputs.branch_name }} from commit ${{ steps.get-commit.outputs.commit }}"
 
       - name: Create branch meta file
-        working-directory: work-repo
         run: |
           mkdir -p .github
           cat > .github/branch-meta.yaml << EOF
@@ -119,13 +119,12 @@ jobs:
 
       - name: Copy auto-add-label workflow template to child branch
         run: |
-          mkdir -p work-repo/.github/workflows
-          cp templates-repo/.github/workflow-templates/auto-add-label.yaml.template \
-             work-repo/.github/workflows/auto-add-label.yaml
+          mkdir -p .github/workflows
+          cp /tmp/workflow-templates/auto-add-label.yaml.template \
+             .github/workflows/auto-add-label.yaml
           echo "Copied auto-add-label.yaml to child branch"
 
       - name: Commit and push child branch
-        working-directory: work-repo
         run: |
           git add .github/branch-meta.yaml .github/workflows/auto-add-label.yaml
           git commit -m "chore: initialize child branch with meta file and auto-label workflow
@@ -138,14 +137,12 @@ jobs:
           echo "Pushed child branch ${{ inputs.branch_name }} to remote"
 
       - name: Checkout base branch for updates
-        working-directory: work-repo
         run: |
           git checkout "${{ inputs.base_branch }}"
           git pull origin "${{ inputs.base_branch }}"
 
       - name: Check and create auto-update-child workflow if needed
         id: check-workflow
-        working-directory: work-repo
         run: |
           WORKFLOW_FILE=".github/workflows/auto-update-child.yaml"
           if [ -f "$WORKFLOW_FILE" ]; then
@@ -159,9 +156,9 @@ jobs:
       - name: Copy auto-update-child workflow template to base branch
         if: steps.check-workflow.outputs.workflow_exists == 'false'
         run: |
-          mkdir -p work-repo/.github/workflows
-          cp templates-repo/.github/workflow-templates/auto-update-child.yaml.template \
-             work-repo/.github/workflows/auto-update-child.yaml
+          mkdir -p .github/workflows
+          cp /tmp/workflow-templates/auto-update-child.yaml.template \
+             .github/workflows/auto-update-child.yaml
           echo "Copied auto-update-child.yaml to base branch"
 
       - name: Install yq for YAML operations
@@ -170,7 +167,6 @@ jobs:
           sudo chmod +x /usr/local/bin/yq
 
       - name: Update children-branches.yaml
-        working-directory: work-repo
         run: |
           CHILDREN_FILE=".github/children-branches.yaml"
           CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -206,7 +202,6 @@ jobs:
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ steps.generate-token.outputs.token }}
-          path: work-repo
           commit-message: |
             chore: register child branch ${{ inputs.branch_name }}
 
