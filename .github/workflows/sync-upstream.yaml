@@ -19,6 +19,7 @@ jobs:
           - iron
           - humble
           - foxy
+          - jazzy
 
     steps:
       - name: Generate token
