@@ -55,7 +55,8 @@ class LaunchService:
         *,
         argv: Optional[Iterable[Text]] = None,
         noninteractive: bool = False,
-        debug: bool = False
+        debug: bool = False,
+        dry_run: bool = False
     ) -> None:
         """
         Create a LaunchService.
@@ -63,18 +64,21 @@ class LaunchService:
         :param: argv stored in the context for access by the entities, None results in []
         :param: noninteractive if True (not default), this service will assume it has
             no terminal associated e.g. it is being executed from a non interactive script
-        :param: debug if True (not default), asyncio the logger are seutp for debug
+        :param: debug if True (not default), asyncio and the logger are set up for debug
+        :param: dry_run if True, the launch system will process events but skip actual
+            process spawning, logging what actions would be executed instead
         """
         # Setup logging and debugging.
         launch.logging.launch_config.level = logging.DEBUG if debug else logging.INFO
         self.__debug = debug
         self.__argv = argv if argv is not None else []
+        self.__dry_run = dry_run
 
         # Setup logging
         self.__logger = launch.logging.get_logger('launch')
 
         # Setup context and register a built-in event handler for bootstrapping.
-        self.__context = LaunchContext(argv=self.__argv, noninteractive=noninteractive)
+        self.__context = LaunchContext(argv=self.__argv, noninteractive=noninteractive, dry_run=self.__dry_run)
         self.__context.register_event_handler(OnIncludeLaunchDescription())
         self.__context.register_event_handler(OnShutdown(on_shutdown=self.__on_shutdown))
 
