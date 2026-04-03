@@ -39,7 +39,8 @@ class LaunchContext:
         self,
         *,
         argv: Optional[Iterable[Text]] = None,
-        noninteractive: bool = False
+        noninteractive: bool = False,
+        dry_run: bool = False
     ) -> None:
         """
         Create a LaunchContext.
@@ -47,9 +48,12 @@ class LaunchContext:
         :param: argv stored in the context for access by the entities, None results in []
         :param: noninteractive if True (not default), this service will assume it has
             no terminal associated e.g. it is being executed from a non interactive script
+        :param: dry_run if True, the launch system will process events but skip actual
+            process spawning
         """
         self.__argv = argv if argv is not None else []
         self.__noninteractive = noninteractive
+        self.__dry_run = dry_run
 
         self._event_queue = asyncio.Queue()  # type: asyncio.Queue
         self._event_handlers = collections.deque()  # type: collections.deque
@@ -81,6 +85,11 @@ class LaunchContext:
     def noninteractive(self):
         """Getter for noninteractive."""
         return self.__noninteractive
+
+    @property
+    def dry_run(self) -> bool:
+        """Getter for dry_run."""
+        return self.__dry_run
 
     def _set_is_shutdown(self, state: bool) -> None:
         self.__is_shutdown = state

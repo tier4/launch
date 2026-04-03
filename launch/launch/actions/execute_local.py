@@ -19,6 +19,7 @@ import io
 import logging
 import os
 import platform
+import re
 import signal
 import threading
 import traceback
@@ -32,6 +33,7 @@ from typing import Text
 from typing import Tuple  # noqa: F401
 from typing import Union
 
+import yaml
 import launch.logging
 
 from osrf_pycommon.process_utils import async_execute_process
@@ -77,6 +79,58 @@ from ..utilities.type_utils import perform_typed_substitution
 
 _global_process_counter_lock = threading.Lock()
 _global_process_counter = 0  # in Python3, this number is unbounded (no rollover)
+
+
+def _check_param_file_integrity(cmd: List[str], logger: logging.Logger) -> None:
+    """
+    Check integrity of parameter files referenced in the command.
+
+    For full path files (not in /tmp/):
+    - Check if file exists
+    - Check if file is readable
+    - Validate YAML syntax
+
+    For temporary files (in /tmp/):
+    - Log as temporary and skip integrity check
+    """
+    if not cmd:
+        return
+
+    cmd_str = ' '.join(cmd)
+
+    # Extract --params-file arguments using regex
+    param_files = re.findall(r'--params-file\s+(\S+)', cmd_str)
+
+    for param_file in param_files:
+        # Skip temporary files
+        if param_file.startswith('/tmp/'):
+            logger.info(f"[dry-run] Parameter file is temporary (tmp): {param_file}")
+            continue
+
+        # Skip non-absolute paths (relative paths would be resolved at runtime)
+        if not os.path.isabs(param_file):
+            logger.info(f"[dry-run] Parameter file uses relative path: {param_file}")
+            continue
+
+        # Check if file exists
+        if not os.path.exists(param_file):
+            logger.error(f"[dry-run] Parameter file NOT FOUND: {param_file}")
+            continue
+
+        # Check if file is readable
+        if not os.access(param_file, os.R_OK):
+            logger.error(f"[dry-run] Parameter file not readable: {param_file}")
+            continue
+
+        # Validate YAML syntax
+        try:
+            with open(param_file, 'r') as f:
+                yaml.safe_load(f)
+            logger.info(f"[dry-run] Parameter file OK: {param_file}")
+        except yaml.YAMLError as e:
+            logger.error(f"[dry-run] Invalid YAML in parameter file: {param_file} - {e}")
+        except Exception as e:
+            logger.error(f"[dry-run] Error reading parameter file: {param_file} - {e}")
 
 
 class ExecuteLocal(Action):
@@ -632,6 +686,22 @@ class ExecuteLocal(Action):
 
         if context.is_shutdown:
             # If shutdown starts before execution can start, don't start execution.
+            return None
+
+        # Dry run mode: log what would be executed and return without spawning
+        if context.dry_run:
+            cmd = self.__process_description.final_cmd
+            cwd = self.__process_description.final_cwd
+            self.__logger = launch.logging.get_logger(name or 'execute_process')
+            self.__logger.info(
+                f"[DRY RUN] Would execute process: cmd='{' '.join(cmd) if cmd else 'None'}', "
+                f"cwd='{cwd}'"
+            )
+            # Check integrity of parameter files
+            _check_param_file_integrity(cmd, self.__logger)
+            # Set a completed future so the launch system knows we're done
+            self.__completed_future = context.asyncio_loop.create_future()
+            self.__completed_future.set_result(None)
             return None
 
         if self.__cached_output:
